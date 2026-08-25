@@ -1,6 +1,6 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, Link } from "react-router-dom";
 import { motion } from "motion/react";
-
+import Button from "./Button";
 function NavBar({ items }) {
     return (
         <motion.nav
@@ -10,7 +10,7 @@ function NavBar({ items }) {
                 duration: 0.5,
                 ease: "easeOut",
             }}
-            className="flex items-center justify-between rounded-lg bg-white px-100 py-5 shadow-lg"
+            className="mx-auto flex w-full max-w-7xl items-center justify-between rounded-lg bg-white px-6 py-5 shadow-lg lg:px-12"
         >
             {/* Logo / Brand */}
             <NavLink
@@ -37,7 +37,6 @@ function NavBar({ items }) {
                             <>
                                 {item.label}
 
-                                {/* Active indicator */}
                                 {isActive && (
                                     <motion.div
                                         layoutId="navbar-active"
@@ -54,6 +53,14 @@ function NavBar({ items }) {
                     </NavLink>
                 ))}
             </div>
+            <Link to="/Login">
+                <Button
+                    bgColor="bg-red-200 font-extrabold"
+                    textColor="text-red-500"
+                    border={false}
+                    children="LogOut"
+                />
+            </Link>
         </motion.nav>
     );
 }

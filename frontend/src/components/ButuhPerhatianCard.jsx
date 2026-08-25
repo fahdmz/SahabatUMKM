@@ -1,47 +1,136 @@
-
 import { motion } from "motion/react";
 
-function ButuhPerhatianCard({ namaMenu, stok, minStok }) {
+function ButuhPerhatianCard({
+    namaMenu,
+    stok,
+    minStok,
+}) {
     return (
         <motion.div
             whileHover={{ y: -2 }}
             transition={{ duration: 0.2 }}
-            className="rounded-2xl bg-white p-6 shadow-xl"
+            className="
+                rounded-3xl
+                border
+                border-gray-200
+                bg-white
+                p-6
+                shadow-sm
+            "
         >
-            <h3 className="text-2xl font-bold text-black">
-                {namaMenu}
-            </h3>
 
-            <div className="mt-5 flex items-end justify-between">
+            {/* HEADER */}
+
+            <div className="flex items-start gap-4">
+
+                <div className="
+                    flex
+                    h-10
+                    w-10
+                    shrink-0
+                    items-center
+                    justify-center
+                    rounded-xl
+                    bg-orange-100
+                    text-lg
+                ">
+                    !
+                </div>
+
                 <div>
-                    <p className="text-sm font-bold text-gray-400">
-                        STOK TERSISA
+                    <p className="
+                        text-xs
+                        font-extrabold
+                        tracking-widest
+                        text-orange-500
+                    ">
+                        BUTUH PERHATIAN
                     </p>
 
-                    <p className="mt-1 text-3xl font-extrabold text-black">
-                        {stok}
-                    </p>
+                    <h3 className="
+                        mt-2
+                        text-xl
+                        font-extrabold
+                        text-gray-900
+                    ">
+                        Stok {namaMenu} menipis
+                    </h3>
                 </div>
 
-                <div className="text-right">
-                    <p className="text-sm font-bold text-gray-400">
-                        MINIMUM STOK
-                    </p>
+            </div>
 
-                    <p className="mt-1 text-xl font-bold text-gray-700">
-                        {minStok}
-                    </p>
+
+            {/* STOCK INFO */}
+
+            <div className="
+                mt-6
+                rounded-2xl
+                bg-gray-50
+                p-4
+            ">
+
+                <div className="flex items-center justify-between">
+
+                    <div>
+                        <p className="
+                            text-xs
+                            font-bold
+                            text-gray-400
+                        ">
+                            STOK SEKARANG
+                        </p>
+
+                        <p className="
+                            mt-1
+                            text-2xl
+                            font-extrabold
+                            text-red-500
+                        ">
+                            {stok}
+                        </p>
+                    </div>
+
+                    <div className="text-right">
+
+                        <p className="
+                            text-xs
+                            font-bold
+                            text-gray-400
+                        ">
+                            MINIMUM
+                        </p>
+
+                        <p className="
+                            mt-1
+                            text-xl
+                            font-extrabold
+                            text-gray-700
+                        ">
+                            {minStok}
+                        </p>
+
+                    </div>
+
                 </div>
+
             </div>
 
-            <div className="mt-5 rounded-xl bg-gray-50 px-4 py-3">
-                <p className="text-sm font-semibold text-gray-600">
-                    Stok menu ini perlu diperhatikan.
-                </p>
-            </div>
+
+            {/* MESSAGE */}
+
+            <p className="
+                mt-4
+                text-sm
+                font-semibold
+                leading-5
+                text-gray-500
+            ">
+                Stok menu ini sudah menyentuh batas minimum.
+                Coba tambah stok sebelum kehabisan.
+            </p>
+
         </motion.div>
     );
 }
 
 export default ButuhPerhatianCard;
-

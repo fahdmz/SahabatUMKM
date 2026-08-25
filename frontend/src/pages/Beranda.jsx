@@ -3,64 +3,72 @@ import NavBar from "../components/Navbar";
 import Button from "../components/Button";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 
 function Beranda() {
     const [business, setBusiness] = useState(null);
     const [menus, setMenus] = useState([]);
-
     const [totalMasuk, setTotalMasuk] = useState(0);
     const [totalBelanja, setTotalBelanja] = useState(0);
     const [growthPercent, setGrowthPercent] = useState(0);
     const [topMenuToday, setTopMenuToday] = useState(null);
     const [urgentLowStock, setUrgentLowStock] = useState(null);
 
+    const [loading, setLoading] = useState(true);
+    const [hasNoTransactions, setHasNoTransactions] = useState(false);
+
     const navItems = [
         { label: "Beranda", href: "/Beranda" },
         { label: "Menu Laku", href: "/MenuLaku" },
-        { label: "Rapor", href: "/Rapor" },
+        { label: "Rapor", href: "/RaporBisnis" },
+        { label: "Grafik Bisnis", href: "/GrafikBisnis" },
     ];
 
     useEffect(() => {
         async function getBusinessAndMenus() {
-            console.log("=== GET BUSINESS ===");
-
-            const {
-                data: { user },
-                error: userError
-            } = await supabase.auth.getUser();
-
-            console.log("USER:", user);
-            console.log("USER ERROR:", userError);
-
-            if (!user) {
-                console.log("BELUM LOGIN");
-                return;
-            }
-
-            console.log("USER ID:", user.id);
+            setLoading(true);
 
             try {
                 // =========================
+                // GET USER
+                // =========================
+
+                const {
+                    data: { user },
+                    error: userError,
+                } = await supabase.auth.getUser();
+
+                if (userError) {
+                    console.error("GAGAL MENGAMBIL USER:", userError);
+                    return;
+                }
+
+                if (!user) {
+                    console.log("BELUM LOGIN");
+                    return;
+                }
+
+                // =========================
                 // GET BUSINESS
                 // =========================
+
                 const {
                     data: businessData,
-                    error: businessError
+                    error: businessError,
                 } = await supabase
                     .from("businesses")
                     .select("*")
                     .eq("owner_id", user.id);
 
-                console.log("BUSINESS:", businessData);
-                console.log("BUSINESS ERROR:", businessError);
-
                 if (businessError) {
-                    console.error("GAGAL MENGAMBIL BUSINESS:", businessError);
+                    console.error(
+                        "GAGAL MENGAMBIL BUSINESS:",
+                        businessError
+                    );
                     return;
                 }
 
-                if (businessData.length === 0) {
+                if (!businessData || businessData.length === 0) {
                     console.log("USER BELUM MEMILIKI BUSINESS");
                     return;
                 }
@@ -69,48 +77,153 @@ function Beranda() {
 
                 setBusiness(currentBusiness);
 
-                console.log("CURRENT BUSINESS:", currentBusiness);
+                // =========================
+                // DATE BOUNDARIES
+                // =========================
+
+                const todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
+
+                const tomorrowStart = new Date(todayStart);
+                tomorrowStart.setDate(
+                    tomorrowStart.getDate() + 1
+                );
+
+                const yesterdayStart = new Date(todayStart);
+                yesterdayStart.setDate(
+                    yesterdayStart.getDate() - 1
+                );
+
+                // =========================
+                // CHECK TODAY'S TRANSACTIONS
+                // =========================
+
+                const [
+                    {
+                        count: salesCount,
+                        error: salesCountError,
+                    },
+                    {
+                        count: expensesCount,
+                        error: expensesCountError,
+                    },
+                ] = await Promise.all([
+                    supabase
+                        .from("sales")
+                        .select("id", {
+                            count: "exact",
+                            head: true,
+                        })
+                        .eq(
+                            "business_id",
+                            currentBusiness.id
+                        )
+                        .gte(
+                            "sold_at",
+                            todayStart.toISOString()
+                        )
+                        .lt(
+                            "sold_at",
+                            tomorrowStart.toISOString()
+                        ),
+
+                    supabase
+                        .from("expenses")
+                        .select("id", {
+                            count: "exact",
+                            head: true,
+                        })
+                        .eq(
+                            "business_id",
+                            currentBusiness.id
+                        )
+                        .gte(
+                            "spent_at",
+                            todayStart.toISOString()
+                        )
+                        .lt(
+                            "spent_at",
+                            tomorrowStart.toISOString()
+                        ),
+                ]);
+
+                if (salesCountError) {
+                    console.error(
+                        "GAGAL CHECK SALES:",
+                        salesCountError
+                    );
+                    return;
+                }
+
+                if (expensesCountError) {
+                    console.error(
+                        "GAGAL CHECK EXPENSES:",
+                        expensesCountError
+                    );
+                    return;
+                }
+
+                console.log(
+                    "SALES HARI INI:",
+                    salesCount
+                );
+
+                console.log(
+                    "EXPENSES HARI INI:",
+                    expensesCount
+                );
+
+                // =========================
+                // EMPTY TODAY STATE
+                // =========================
+
+                const noTransactionsToday =
+                    (salesCount || 0) === 0 &&
+                    (expensesCount || 0) === 0;
+
+                if (noTransactionsToday) {
+                    console.log(
+                        "HARI INI BELUM ADA TRANSAKSI"
+                    );
+
+                    setHasNoTransactions(true);
+
+                    return;
+                }
 
                 // =========================
                 // GET MENUS
                 // =========================
+
                 const {
                     data: menuData,
-                    error: menuError
+                    error: menuError,
                 } = await supabase
                     .from("menus")
                     .select("*")
-                    .eq("business_id", currentBusiness.id)
+                    .eq(
+                        "business_id",
+                        currentBusiness.id
+                    )
                     .eq("is_active", true);
 
-                console.log("MENUS:", menuData);
-                console.log("MENU ERROR:", menuError);
-
                 if (menuError) {
-                    console.error("GAGAL MENGAMBIL MENU:", menuError);
-                    return;
+                    console.error(
+                        "GAGAL MENGAMBIL MENU:",
+                        menuError
+                    );
+                } else {
+                    setMenus(menuData || []);
                 }
 
-                setMenus(menuData);
-
                 // =========================
-                // DATE BOUNDARIES
+                // GET SALES
+                // TODAY + YESTERDAY
                 // =========================
-                const todayStart = new Date();
-                todayStart.setHours(0, 0, 0, 0);
 
-                const yesterdayStart = new Date(todayStart);
-                yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-
-                const yesterdayEnd = new Date(todayStart);
-                yesterdayEnd.setMilliseconds(-1);
-
-                // =========================
-                // GET SALES (today + yesterday, filtered locally)
-                // =========================
                 const {
                     data: salesData,
-                    error: salesError
+                    error: salesError,
                 } = await supabase
                     .from("sales")
                     .select(`
@@ -123,47 +236,102 @@ function Beranda() {
                             name
                         )
                     `)
-                    .eq("business_id", currentBusiness.id)
-                    .gte("sold_at", yesterdayStart.toISOString());
-
-                console.log("SALES (today+yesterday):", salesData);
-                console.log("SALES ERROR:", salesError);
+                    .eq(
+                        "business_id",
+                        currentBusiness.id
+                    )
+                    .gte(
+                        "sold_at",
+                        yesterdayStart.toISOString()
+                    )
+                    .lt(
+                        "sold_at",
+                        tomorrowStart.toISOString()
+                    );
 
                 if (salesError) {
-                    console.error("GAGAL MENGAMBIL SALES:", salesError);
+                    console.error(
+                        "GAGAL MENGAMBIL SALES:",
+                        salesError
+                    );
                     return;
                 }
 
-                const todaySales = (salesData || []).filter(
-                    (sale) => new Date(sale.sold_at) >= todayStart
+                // =========================
+                // SPLIT TODAY / YESTERDAY
+                // =========================
+
+                const todaySales = (
+                    salesData || []
+                ).filter(
+                    (sale) =>
+                        new Date(sale.sold_at) >=
+                        todayStart
                 );
 
-                const yesterdaySales = (salesData || []).filter((sale) => {
-                    const soldAt = new Date(sale.sold_at);
-                    return soldAt >= yesterdayStart && soldAt <= yesterdayEnd;
+                const yesterdaySales = (
+                    salesData || []
+                ).filter((sale) => {
+                    const soldAt = new Date(
+                        sale.sold_at
+                    );
+
+                    return (
+                        soldAt >= yesterdayStart &&
+                        soldAt < todayStart
+                    );
                 });
 
-                const todayTotal = todaySales.reduce(
-                    (sum, sale) => sum + sale.total_price,
-                    0
-                );
+                // =========================
+                // TOTAL REVENUE
+                // =========================
 
-                const yesterdayTotal = yesterdaySales.reduce(
-                    (sum, sale) => sum + sale.total_price,
-                    0
-                );
+                const todayTotal =
+                    todaySales.reduce(
+                        (sum, sale) =>
+                            sum +
+                            Number(
+                                sale.total_price
+                            ),
+                        0
+                    );
+
+                const yesterdayTotal =
+                    yesterdaySales.reduce(
+                        (sum, sale) =>
+                            sum +
+                            Number(
+                                sale.total_price
+                            ),
+                        0
+                    );
 
                 setTotalMasuk(todayTotal);
 
+                // =========================
+                // GROWTH
+                // =========================
+
                 if (yesterdayTotal === 0) {
-                    setGrowthPercent(todayTotal > 0 ? 100 : 0);
+                    setGrowthPercent(
+                        todayTotal > 0 ? 100 : 0
+                    );
                 } else {
                     const percent =
-                        ((todayTotal - yesterdayTotal) / yesterdayTotal) * 100;
-                    setGrowthPercent(Math.round(percent));
+                        ((todayTotal -
+                            yesterdayTotal) /
+                            yesterdayTotal) *
+                        100;
+
+                    setGrowthPercent(
+                        Math.round(percent)
+                    );
                 }
 
-                // Top menu today by portions sold
+                // =========================
+                // TOP MENU TODAY
+                // =========================
+
                 const menuTotals = {};
 
                 todaySales.forEach((sale) => {
@@ -171,52 +339,91 @@ function Beranda() {
 
                     if (!menuTotals[menuId]) {
                         menuTotals[menuId] = {
-                            name: sale.menus.name,
+                            name:
+                                sale.menus?.name ||
+                                "Menu",
                             total_porsi: 0,
                         };
                     }
 
-                    menuTotals[menuId].total_porsi += sale.quantity;
+                    menuTotals[
+                        menuId
+                    ].total_porsi += Number(
+                        sale.quantity
+                    );
                 });
 
-                const sortedMenus = Object.values(menuTotals).sort(
-                    (a, b) => b.total_porsi - a.total_porsi
-                );
-
-                setTopMenuToday(sortedMenus[0] || null);
-
-                // =========================
-                // GET EXPENSES (today)
-                // =========================
-                const {
-                    data: expensesData,
-                    error: expensesError
-                } = await supabase
-                    .from("expenses")
-                    .select("amount, spent_at")
-                    .eq("business_id", currentBusiness.id)
-                    .gte("spent_at", todayStart.toISOString());
-
-                console.log("EXPENSES (today):", expensesData);
-                console.log("EXPENSES ERROR:", expensesError);
-
-                if (expensesError) {
-                    console.error("GAGAL MENGAMBIL EXPENSES:", expensesError);
-                } else {
-                    const expensesTotal = (expensesData || []).reduce(
-                        (sum, expense) => sum + expense.amount,
-                        0
+                const sortedMenus =
+                    Object.values(
+                        menuTotals
+                    ).sort(
+                        (a, b) =>
+                            b.total_porsi -
+                            a.total_porsi
                     );
 
-                    setTotalBelanja(expensesTotal);
+                setTopMenuToday(
+                    sortedMenus[0] || null
+                );
+
+                // =========================
+                // GET EXPENSES TODAY
+                // =========================
+
+                const {
+                    data: expensesData,
+                    error: expensesError,
+                } = await supabase
+                    .from("expenses")
+                    .select(
+                        "amount, spent_at"
+                    )
+                    .eq(
+                        "business_id",
+                        currentBusiness.id
+                    )
+                    .gte(
+                        "spent_at",
+                        todayStart.toISOString()
+                    )
+                    .lt(
+                        "spent_at",
+                        tomorrowStart.toISOString()
+                    );
+
+                if (expensesError) {
+                    console.error(
+                        "GAGAL MENGAMBIL EXPENSES:",
+                        expensesError
+                    );
+                } else {
+                    const expensesTotal =
+                        (
+                            expensesData || []
+                        ).reduce(
+                            (
+                                sum,
+                                expense
+                            ) =>
+                                sum +
+                                Number(
+                                    expense.amount
+                                ),
+                            0
+                        );
+
+                    setTotalBelanja(
+                        expensesTotal
+                    );
                 }
 
                 // =========================
-                // GET LOW STOCK (for tomorrow's suggestion)
+                // GET LOW STOCK
                 // =========================
+
                 const {
                     data: inventoryData,
-                    error: inventoryError
+                    error: inventoryError,
                 } = await supabase
                     .from("inventory")
                     .select(`
@@ -228,325 +435,632 @@ function Beranda() {
                             name
                         )
                     `)
-                    .eq("business_id", currentBusiness.id);
-
-                console.log("INVENTORY:", inventoryData);
-                console.log("INVENTORY ERROR:", inventoryError);
+                    .eq(
+                        "business_id",
+                        currentBusiness.id
+                    );
 
                 if (inventoryError) {
-                    console.error("GAGAL MENGAMBIL INVENTORY:", inventoryError);
+                    console.error(
+                        "GAGAL MENGAMBIL INVENTORY:",
+                        inventoryError
+                    );
                 } else {
-                    const attentionItems = (inventoryData || [])
-                        .filter((item) => item.stock <= item.minimum_stock)
-                        .sort(
-                            (a, b) =>
-                                (a.stock - a.minimum_stock) -
-                                (b.stock - b.minimum_stock)
-                        );
+                    const attentionItems =
+                        (
+                            inventoryData ||
+                            []
+                        )
+                            .filter(
+                                (item) =>
+                                    item.stock <=
+                                    item.minimum_stock
+                            )
+                            .sort(
+                                (a, b) =>
+                                    a.stock -
+                                    a.minimum_stock -
+                                    (b.stock -
+                                        b.minimum_stock)
+                            );
 
-                    setUrgentLowStock(attentionItems[0] || null);
+                    setUrgentLowStock(
+                        attentionItems[0] ||
+                        null
+                    );
                 }
-
             } catch (error) {
-                console.error("QUERY CRASHED:", error);
+                console.error(
+                    "QUERY CRASHED:",
+                    error
+                );
+            } finally {
+                setLoading(false);
             }
         }
 
         getBusinessAndMenus();
     }, []);
 
-    const untung = totalMasuk - totalBelanja;
+    // =========================
+    // LOADING
+    // =========================
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-[#f5f2eb]">
+                <NavBar items={navItems} />
+
+                <div className="flex min-h-[70vh] items-center justify-center">
+                    <motion.div
+                        initial={{
+                            opacity: 0,
+                            y: 10,
+                        }}
+                        animate={{
+                            opacity: 1,
+                            y: 0,
+                        }}
+                        className="font-bold text-gray-400"
+                    >
+                        Memuat data bisnis...
+                    </motion.div>
+                </div>
+            </div>
+        );
+    }
+
+    // =========================
+    // NO TRANSACTION TODAY
+    // =========================
+
+    if (hasNoTransactions) {
+        return (
+            <Navigate
+                to="/Beranda/BelumAdaData"
+                replace
+            />
+        );
+    }
+
+    const untung =
+        totalMasuk - totalBelanja;
+
+    // =========================
+    // NORMAL DASHBOARD
+    // =========================
 
     return (
-        <>
-            {/* NAVBAR */}
+        <div className="min-h-screen bg-[#f5f2eb]">
+            {/* ================= NAVBAR ================= */}
+
             <motion.div
-                initial={{ opacity: 0, y: -20 }}
+                initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{
-                    duration: 0.5,
-                    ease: "easeOut",
-                }}
+                transition={{ duration: 0.4 }}
             >
                 <NavBar items={navItems} />
             </motion.div>
 
-            <div className="px-150">
+            {/* ================= PAGE ================= */}
 
-                {/* GREETING */}
+            <main className="mx-auto max-w-5xl px-6 pb-20">
+
+                {/* ================= GREETING ================= */}
+
+                <motion.div
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    className="pt-10 pb-7"
+                >
+                    <h1 className="text-3xl font-extrabold text-gray-900">
+                        Halo, Bu Sari
+                    </h1>
+
+                    <p className="mt-2 text-[10px] font-extrabold uppercase tracking-[0.25em] text-gray-400">
+                        Minggu, {new Date().toLocaleDateString("id-ID", {
+                            day: "2-digit",
+                            month: "long"
+                        })}
+                    </p>
+                </motion.div>
+
+
+                {/* ===================================================== */}
+                {/* ================= MAIN SUMMARY ====================== */}
+                {/* ===================================================== */}
+
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                        duration: 0.6,
-                        delay: 0.15,
-                        ease: "easeOut",
-                    }}
-                    className="py-10 text-4xl font-bold"
-                >
-                    Hello, Bu Sari
-                </motion.div>
-
-
-                {/* MAIN CARDS */}
-                <motion.div
-                    initial="hidden"
-                    animate="visible"
-                    variants={{
-                        hidden: {},
-                        visible: {
-                            transition: {
-                                staggerChildren: 0.15,
-                            },
-                        },
-                    }}
-                    className="flex items-stretch gap-10"
+                    transition={{ duration: 0.6 }}
+                    className="
+                    relative overflow-hidden
+                    rounded-[32px]
+                    bg-[#11120f]
+                    px-8 py-8
+                    shadow-2xl
+                "
                 >
 
-                    {/* PROFIT CARD */}
-                    <motion.div
-                        variants={{
-                            hidden: {
-                                opacity: 0,
-                                x: -40,
-                            },
-                            visible: {
-                                opacity: 1,
-                                x: 0,
-                            },
-                        }}
-                        transition={{
-                            duration: 0.6,
-                            ease: "easeOut",
-                        }}
-                        whileHover={{
-                            y: -4,
-                        }}
-                        className="flex flex-[5] flex-col rounded-4xl bg-green-700 px-12 pt-12"
-                    >
-                        <div className="text-xl font-extrabold text-gray-300">
-                            Untung Hari Ini
-                        </div>
+                    {/* Green glow */}
 
-                        <div className="py-2"></div>
+                    <div
+                        className="
+                        pointer-events-none
+                        absolute
+                        -right-20
+                        -top-32
+                        h-80
+                        w-80
+                        rounded-full
+                        bg-green-700/30
+                        blur-3xl
+                    "
+                    />
 
-                        <div className="pb-8">
-                            <div className="text-5xl font-extrabold text-white">
-                                RP{untung.toLocaleString("id-ID")}
+                    <div className="relative z-10 flex items-center justify-between">
+
+                        {/* ================= LEFT ================= */}
+
+                        <div className="flex-1">
+
+                            <p className="
+                            text-[10px]
+                            font-extrabold
+                            uppercase
+                            tracking-[0.25em]
+                            text-green-500
+                        ">
+                                Ringkasan Warung Hari Ini
+                            </p>
+
+
+                            {/* PROFIT */}
+
+                            <div className="mt-5 flex items-center gap-4">
+
+                                <h2 className="
+                                text-6xl
+                                font-extrabold
+                                tracking-tight
+                                text-white
+                            ">
+                                    Rp{untung.toLocaleString("id-ID")}
+                                </h2>
+
+
+
                             </div>
-                        </div>
 
-                        <div className="border-t border-white"></div>
 
-                        <div className="flex gap-6 pt-4">
+                            {/* ================= STATS ================= */}
 
-                            <div className="flex-1 rounded-lg px-4 pt-4">
-                                <div className="text-lg text-white">
-                                    Total Masuk
+                            <div className="mt-7 flex gap-10">
+
+                                <div>
+                                    <p className="
+                                    text-[9px]
+                                    font-bold
+                                    uppercase
+                                    tracking-[0.2em]
+                                    text-gray-500
+                                ">
+                                        Total Masuk
+                                    </p>
+
+                                    <p className="
+                                    mt-1
+                                    text-2xl
+                                    font-extrabold
+                                    text-white
+                                ">
+                                        Rp{totalMasuk.toLocaleString("id-ID")}
+                                    </p>
                                 </div>
 
-                                <div className="text-4xl font-bold text-white">
-                                    RP{totalMasuk.toLocaleString("id-ID")}
+
+                                <div>
+                                    <p className="
+                                    text-[9px]
+                                    font-bold
+                                    uppercase
+                                    tracking-[0.2em]
+                                    text-gray-500
+                                ">
+                                        Total Belanja
+                                    </p>
+
+                                    <p className="
+                                    mt-1
+                                    text-2xl
+                                    font-extrabold
+                                    text-red-400
+                                ">
+                                        Rp{totalBelanja.toLocaleString("id-ID")}
+                                    </p>
                                 </div>
-                            </div>
 
-                            <div className="flex-1 rounded-l px-4 pt-4">
-                                <div className="text-lg text-white">
-                                    Total Belanja
+
+                                <div>
+                                    <p className="
+                                    text-[9px]
+                                    font-bold
+                                    uppercase
+                                    tracking-[0.2em]
+                                    text-gray-500
+                                ">
+                                        Menu Terlaris
+                                    </p>
+
+                                    <p className="
+                                    mt-1
+                                    text-2xl
+                                    font-extrabold
+                                    text-white
+                                ">
+                                        {topMenuToday
+                                            ? `${topMenuToday.total_porsi} porsi`
+                                            : "0 porsi"
+                                        }
+                                    </p>
                                 </div>
 
-                                <div className="text-4xl font-bold text-white">
-                                    RP{totalBelanja.toLocaleString("id-ID")}
-                                </div>
                             </div>
 
                         </div>
-                    </motion.div>
 
 
-                    {/* BUSINESS SUMMARY */}
-                    <motion.div
-                        variants={{
-                            hidden: {
-                                opacity: 0,
-                                x: 40,
-                            },
-                            visible: {
-                                opacity: 1,
-                                x: 0,
-                            },
-                        }}
-                        transition={{
-                            duration: 0.6,
-                            ease: "easeOut",
-                        }}
-                        whileHover={{
-                            y: -4,
-                        }}
-                        className="flex flex-[2] flex-col rounded-4xl bg-white px-5 py-5 shadow-xl"
-                    >
-                        <div className="text-lg font-extrabold text-gray-400">
-                            Ringkasan Bisnis Hari ini
-                        </div>
+                        {/* ================= ACTIONS ================= */}
 
-                        <div className="text-2xl font-extrabold text-black">
-                            {growthPercent > 0 && "Hari ini Jualan Ibu Naik!"}
-                            {growthPercent < 0 && "Hari ini Jualan Ibu Turun"}
-                            {growthPercent === 0 && "Jualan Hari Ini Stabil"}
-                        </div>
+                        <div className="flex w-50 flex-col gap-3">
 
-                        <div className="text-4xl text-green-800">
-                            {growthPercent > 0 ? "+" : ""}
-                            {growthPercent}%
-                        </div>
+                            <Link to="/Beranda/MulaiCatat">
+                                <Button
+                                    children="Ada yang Masuk"
+                                    bgColor="bg-green-600 hover:bg-green-700"
+                                    textColor="text-white"
+                                    border={false}
+                                    font="font-extrabold"
+                                />
+                            </Link>
 
-                        <div className="pt-10">
-                            <div className="text-xl text-gray-600">
-                                {topMenuToday ? (
-                                    <>
-                                        {topMenuToday.name} paling juara, sudah
-                                        laku {topMenuToday.total_porsi} porsi
-                                        sampai sekarang.
-                                    </>
-                                ) : (
-                                    "Belum ada penjualan hari ini."
-                                )}
-                            </div>
-                        </div>
-                        <a
-                            href="/lmao"
-                            className="pt-12 text-center text-xs text-black transition-colors hover:text-green-700"
-                        >
-                            LIHAT ANALISIS MENU
-                        </a>
-                    </motion.div>
-
-                </motion.div>
-
-
-                <div className="py-8"></div>
-
-
-                {/* BOTTOM SECTION */}
-                <motion.div
-                    initial="hidden"
-                    animate="visible"
-                    variants={{
-                        hidden: {},
-                        visible: {
-                            transition: {
-                                delayChildren: 0.5,
-                                staggerChildren: 0.15,
-                            },
-                        },
-                    }}
-                    className="flex justify-between gap-4"
-                >
-
-                    {/* LEFT BOTTOM CARD */}
-                    <motion.div
-                        variants={{
-                            hidden: {
-                                opacity: 0,
-                                y: 30,
-                            },
-                            visible: {
-                                opacity: 1,
-                                y: 0,
-                            },
-                        }}
-                        transition={{
-                            duration: 0.5,
-                        }}
-                        whileHover={{
-                            y: -3,
-                        }}
-                        className="flex flex-1 justify-center rounded-3xl bg-white py-8 shadow-2xl"
-                    >
-                        Nanti Di isi!
-                    </motion.div>
-
-
-                    {/* RIGHT COLUMN */}
-                    <motion.div
-                        variants={{
-                            hidden: {
-                                opacity: 0,
-                                y: 30,
-                            },
-                            visible: {
-                                opacity: 1,
-                                y: 0,
-                            },
-                        }}
-                        transition={{
-                            duration: 0.5,
-                        }}
-                        className="flex flex-1 flex-col"
-                    >
-
-                        {/* ADVICE */}
-                        <motion.div
-                            whileHover={{
-                                y: -3,
-                            }}
-                            className="flex flex-1 flex-col rounded-2xl border border-red-200 bg-orange-100 px-8 py-8 font-extrabold text-red-800 shadow-2xl"
-                        >
-                            SARAN BUAT BESOK
-
-                            <div className="py-4"></div>
-
-                            <div className="text-xl font-bold">
-                                {urgentLowStock ? (
-                                    <>
-                                        Stok {urgentLowStock.menus.name} tinggal
-                                        sedikit lagi (tersisa{" "}
-                                        {urgentLowStock.stock}). Jangan lupa
-                                        belanja pagi besok biar nggak kehabisan
-                                        pas jam makan siang.
-                                    </>
-                                ) : (
-                                    "Semua stok masih aman, belum ada yang perlu dibeli besok."
-                                )}
-                            </div>
-
-                            <div className="py-8"></div>
 
                             <Link to="/Beranda/CatatBelanja">
                                 <Button
-                                    bgColor="bg-white"
-                                    textColor="black"
-                                >
-                                    Catat Belanja Sekarang
-                                </Button>
+                                    children="Catat Belanja"
+                                    bgColor="bg-orange-800 hover:bg-orange-900"
+                                    textColor="text-white"
+                                    border={false}
+                                    font="font-extrabold"
+                                />
                             </Link>
 
-                        </motion.div>
+                        </div>
 
-
-                        <div className="py-4"></div>
-
-
-                        {/* REPORT */}
-                        <motion.div
-                            whileHover={{
-                                y: -3,
-                            }}
-                            className="flex flex-col justify-center gap-2 rounded-2xl bg-white p-8 text-2xl font-bold shadow-2xl"
-                        >
-                            Tombol Laporan
-
-                            <div className="text-xs text-gray-300">
-                                Klik Buat Kirim Otomatis
-                            </div>
-                        </motion.div>
-
-                    </motion.div>
+                    </div>
 
                 </motion.div>
 
-            </div >
-        </>
+
+                {/* ===================================================== */}
+                {/* ================= BOTTOM SECTION ==================== */}
+                {/* ===================================================== */}
+
+                <div className="mt-6 grid grid-cols-2 gap-5">
+
+
+                    {/* ================================================= */}
+                    {/* ================= CASH CONDITION ================= */}
+                    {/* ================================================= */}
+
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{
+                            duration: 0.5,
+                            delay: 0.15
+                        }}
+                        whileHover={{ y: -3 }}
+                        className="
+                        flex
+                        min-h-[320px]
+                        flex-col
+                        rounded-[28px]
+                        border
+                        border-green-300
+                        bg-green-50
+                        p-7
+                        shadow-lg
+                    "
+                    >
+
+                        {/* TITLE */}
+
+                        <div className="flex items-center gap-3">
+
+
+
+                            <p className="
+                            text-[10px]
+                            font-extrabold
+                            uppercase
+                            tracking-[0.2em]
+                            text-green-700
+                        ">
+                                Kondisi Kas Warung
+                            </p>
+
+                        </div>
+
+
+                        {/* LABELS */}
+
+                        <div className="mt-7 flex justify-between">
+
+                            <p className="
+                            text-[9px]
+                            font-bold
+                            uppercase
+                            tracking-[0.15em]
+                            text-gray-400
+                        ">
+                                Pemasukan vs Pengeluaran
+                            </p>
+
+                            <p className="
+                            text-[9px]
+                            font-bold
+                            uppercase
+                            tracking-[0.15em]
+                            text-gray-400
+                        ">
+                                Selisih Kas
+                            </p>
+
+                        </div>
+
+
+                        {/* VALUES */}
+
+                        <div className="mt-2 flex items-center justify-between">
+
+                            <h2 className="
+                            text-2xl
+                            font-extrabold
+                            text-green-700
+                        ">
+                                {untung >= 0
+                                    ? "Uang Mengalir!"
+                                    : "Perlu Diperhatikan"
+                                }
+                            </h2>
+
+                            <p className="
+                            text-2xl
+                            font-extrabold
+                            text-green-700
+                        ">
+                                Rp{untung.toLocaleString("id-ID")}
+                            </p>
+
+                        </div>
+
+
+                        {/* PROGRESS */}
+
+                        <div className="mt-6">
+
+                            <div className="
+                            h-3
+                            overflow-hidden
+                            rounded-full
+                            bg-red-300
+                        ">
+
+                                <div
+                                    className="h-full rounded-full bg-green-600"
+                                    style={{
+                                        width:
+                                            totalMasuk === 0
+                                                ? "0%"
+                                                : `${Math.min(
+                                                    100,
+                                                    (totalMasuk /
+                                                        (totalMasuk +
+                                                            totalBelanja)) *
+                                                    100
+                                                )}%`
+                                    }}
+                                />
+
+                            </div>
+
+                        </div>
+
+
+                        {/* MESSAGE */}
+
+                        <div className="
+                        mt-6
+                        rounded-2xl
+                        bg-white
+                        px-5
+                        py-4
+                        text-sm
+                        font-semibold
+                        text-gray-500
+                        shadow-sm
+                    ">
+
+                            {" "}
+                            {untung >= 0
+                                ? "Mantap Bu! Jualan hari ini sudah menutup modal belanja."
+                                : "Pengeluaran hari ini lebih besar dari pemasukan."
+                            }
+
+                        </div>
+
+
+                        {/* BUTTON */}
+
+                        <div className="mt-auto pt-6">
+
+                            <Link to="/Beranda/Catatan">
+
+                                <Button
+                                    children="Lihat Riwayat Transaksi →"
+                                    bgColor="bg-orange-800 hover:bg-orange-900"
+                                    textColor="text-white"
+                                    border={false}
+                                    font="font-extrabold"
+                                />
+
+                            </Link>
+
+                        </div>
+
+                    </motion.div>
+
+
+                    {/* ================================================= */}
+                    {/* ================= ADVICE CARD =================== */}
+                    {/* ================================================= */}
+
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{
+                            duration: 0.5,
+                            delay: 0.25
+                        }}
+                        whileHover={{ y: -3 }}
+                        className="
+                        flex
+                        min-h-[320px]
+                        flex-col
+                        rounded-[28px]
+                        border
+                        border-orange-200
+                        bg-orange-50
+                        p-7
+                        shadow-lg
+                    "
+                    >
+
+                        {/* TITLE */}
+
+                        <div className="flex items-center gap-3">
+
+
+
+                            <p className="
+                            text-[10px]
+                            font-extrabold
+                            uppercase
+                            tracking-[0.2em]
+                            text-orange-800
+                        ">
+                                Saran Buat Ibu
+                            </p>
+
+                        </div>
+
+
+                        {/* ADVICE */}
+
+                        <div className="mt-7">
+
+                            <h2 className="
+                            text-2xl
+                            font-extrabold
+                            leading-tight
+                            text-gray-900
+                        ">
+
+                                {urgentLowStock ? (
+                                    <>
+                                        Stok{" "}
+                                        <span className="text-green-700">
+                                            {urgentLowStock.menus?.name}
+                                        </span>{" "}
+                                        tinggal sedikit lagi.
+                                    </>
+                                ) : topMenuToday ? (
+                                    <>
+                                        Wah, jualan{" "}
+                                        <span className="text-green-700">
+                                            {topMenuToday.name}
+                                        </span>{" "}
+                                        Ibu paling laku hari ini!
+                                    </>
+                                ) : (
+                                    "Belum ada saran untuk hari ini."
+                                )}
+
+                            </h2>
+
+                        </div>
+
+
+                        {/* DESCRIPTION */}
+
+                        <p className="
+                        mt-5
+                        text-sm
+                        font-semibold
+                        italic
+                        leading-6
+                        text-gray-500
+                    ">
+
+                            {urgentLowStock ? (
+                                <>
+                                    Stok tersisa{" "}
+                                    <span className="font-extrabold">
+                                        {urgentLowStock.stock}
+                                    </span>
+                                    . Jangan lupa belanja lagi supaya
+                                    tidak kehabisan saat jam makan siang.
+                                </>
+                            ) : topMenuToday ? (
+                                <>
+                                    Menu ini sudah menjadi menu dengan
+                                    penjualan tertinggi hari ini.
+                                    Pertahankan stoknya supaya tetap aman.
+                                </>
+                            ) : (
+                                "Catat transaksi terlebih dahulu supaya kami bisa memberikan saran untuk Ibu."
+                            )}
+
+                        </p>
+
+
+                        {/* BUTTON */}
+
+                        <div className="mt-auto pt-6">
+
+                            <Link to="/Beranda/CatatBelanja">
+
+                                <Button
+                                    children="Catat Belanja Sekarang →"
+                                    bgColor="bg-orange-800 hover:bg-orange-900"
+                                    textColor="text-white"
+                                    border={false}
+                                    font="font-extrabold"
+                                />
+
+                            </Link>
+
+                        </div>
+
+                    </motion.div>
+
+                </div>
+
+            </main>
+        </div>
     );
 }
 

@@ -1,58 +1,69 @@
 import { motion } from "motion/react";
 
-function LakuCard({ NamaMenu, Porsi, Pemasukan, rank }) {
+function LakuCard({
+    NamaMenu,
+    Porsi,
+    Pemasukan,
+    rank,
+}) {
     return (
         <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
             whileHover={{
-                y: -3,
+                y: -2,
                 scale: 1.01,
             }}
             transition={{
-                duration: 0.3,
-                ease: "easeOut",
+                duration: 0.2,
             }}
-            className="flex w-full items-center justify-between rounded-2xl bg-white px-6 py-5 shadow-lg transition-shadow hover:shadow-xl"
+            className="relative overflow-hidden rounded-2xl bg-white px-5 py-4 shadow-sm"
         >
-            {/* LEFT SIDE */}
-            <div className="flex items-center gap-5">
 
-                {/* Ranking */}
-                {rank && (
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 text-sm font-extrabold text-green-700">
-                        #{rank}
+            <div className="flex items-center justify-between">
+
+                {/* LEFT */}
+                <div className="flex min-w-0 items-center gap-4">
+
+                    {/* RANK */}
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-50 text-xs font-extrabold text-green-600">
+                        {rank}
                     </div>
-                )}
 
-                {/* Menu Name */}
-                <div>
-                    <div className="text-xl font-bold text-gray-900">
+                    {/* MENU NAME */}
+                    <p className="truncate text-sm font-extrabold text-gray-900">
                         {NamaMenu}
-                    </div>
+                    </p>
 
-                    <div className="mt-1 text-sm text-gray-400">
-                        Menu terlaris
-                    </div>
+                </div>
+
+
+                {/* RIGHT */}
+                <div className="text-right">
+
+                    <p className="text-base font-extrabold text-gray-900">
+                        {Porsi} Porsi
+                    </p>
+
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-gray-300">
+                        Rp{Number(Pemasukan).toLocaleString("id-ID")} Masuk
+                    </p>
+
                 </div>
 
             </div>
 
 
-            {/* RIGHT SIDE */}
-            <div className="text-right">
+            {/* GREEN PROGRESS LINE */}
+            <div className="absolute bottom-0 left-0 h-1 w-full bg-gray-100">
 
-                <div className="text-2xl font-extrabold text-gray-900">
-                    {Porsi}
-                </div>
-
-                <div className="text-sm text-gray-500">
-                    Porsi Terjual
-                </div>
-
-                <div className="mt-1 text-sm font-semibold text-green-700">
-                    Rp{Pemasukan.toLocaleString("id-ID")}
-                </div>
+                <div
+                    className="h-full rounded-r-full bg-green-600"
+                    style={{
+                        width: `${Math.min(
+                            Number(Porsi) * 7,
+                            100
+                        )}%`,
+                    }}
+                />
 
             </div>
 
