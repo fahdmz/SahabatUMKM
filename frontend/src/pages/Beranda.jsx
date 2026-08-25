@@ -14,6 +14,11 @@ function Beranda() {
     const [topMenuToday, setTopMenuToday] = useState(null);
     const [urgentLowStock, setUrgentLowStock] = useState(null);
 
+    // AI narration of the numbers above — null until it arrives (or fails),
+    // at which point the existing hand-written sentence below is used
+    // instead. The dashboard never waits on this or shows nothing.
+    const [aiNarrative, setAiNarrative] = useState(null);
+
     const [loading, setLoading] = useState(true);
     const [hasNoTransactions, setHasNoTransactions] = useState(false);
 
@@ -29,9 +34,6 @@ function Beranda() {
             setLoading(true);
 
             try {
-                // =========================
-                // GET USER
-                // =========================
 
                 const {
                     data: { user },
@@ -47,10 +49,6 @@ function Beranda() {
                     console.log("BELUM LOGIN");
                     return;
                 }
-
-                // =========================
-                // GET BUSINESS
-                // =========================
 
                 const {
                     data: businessData,
@@ -118,6 +116,7 @@ function Beranda() {
                             "business_id",
                             currentBusiness.id
                         )
+                        .is("deleted_at", null)
                         .gte(
                             "sold_at",
                             todayStart.toISOString()
@@ -137,6 +136,7 @@ function Beranda() {
                             "business_id",
                             currentBusiness.id
                         )
+                        .is("deleted_at", null)
                         .gte(
                             "spent_at",
                             todayStart.toISOString()
@@ -240,6 +240,7 @@ function Beranda() {
                         "business_id",
                         currentBusiness.id
                     )
+                    .is("deleted_at", null)
                     .gte(
                         "sold_at",
                         yesterdayStart.toISOString()
@@ -382,6 +383,7 @@ function Beranda() {
                         "business_id",
                         currentBusiness.id
                     )
+                    .is("deleted_at", null)
                     .gte(
                         "spent_at",
                         todayStart.toISOString()
@@ -481,6 +483,50 @@ function Beranda() {
 
         getBusinessAndMenus();
     }, []);
+
+    // =========================
+    // AI NARRATION
+    // =========================
+    // Runs once the deterministic numbers above have settled. AI only
+    // narrates these already-computed values — it never computes them.
+    // On any failure, aiNarrative stays null and the hand-written sentence
+    // in the render below is used instead.
+
+    useEffect(() => {
+        if (loading || hasNoTransactions) return;
+
+        async function getNarrative() {
+            const { data, error } = await supabase.functions.invoke(
+                "narrate-dashboard",
+                {
+                    body: {
+                        untung: totalMasuk - totalBelanja,
+                        totalMasuk,
+                        totalBelanja,
+                        growthPercent,
+                        topMenuName: topMenuToday?.name ?? null,
+                        topMenuPorsi: topMenuToday?.total_porsi ?? null,
+                        urgentLowStockName: urgentLowStock?.menus?.name ?? null,
+                        urgentLowStockRemaining: urgentLowStock?.stock ?? null,
+                    },
+                }
+            );
+
+            if (!error && data?.narrative) {
+                setAiNarrative(data.narrative);
+            }
+        }
+
+        getNarrative();
+    }, [
+        loading,
+        hasNoTransactions,
+        totalMasuk,
+        totalBelanja,
+        growthPercent,
+        topMenuToday,
+        urgentLowStock,
+    ]);
 
     // =========================
     // LOADING
@@ -895,9 +941,11 @@ function Beranda() {
                     ">
 
                             {" "}
-                            {untung >= 0
-                                ? "Mantap Bu! Jualan hari ini sudah menutup modal belanja."
-                                : "Pengeluaran hari ini lebih besar dari pemasukan."
+                            {aiNarrative ??
+                                (untung >= 0
+                                    ? "Mantap Bu! Jualan hari ini sudah menutup modal belanja."
+                                    : "Pengeluaran hari ini lebih besar dari pemasukan."
+                                )
                             }
 
                         </div>

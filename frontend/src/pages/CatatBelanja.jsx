@@ -1,9 +1,13 @@
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import NavBar from "../components/Navbar";
 import Button from "../components/Button";
 import { supabase } from "../lib/supabase";
 import { motion, AnimatePresence } from "motion/react";
+
+// Below this confidence, or on any AI failure/timeout, we fall back to the
+// deterministic regex parser rather than trust a shaky extraction.
+const AI_CONFIDENCE_THRESHOLD = 0.5;
 
 function CatatBelanja() {
     const navItems = [
@@ -12,17 +16,48 @@ function CatatBelanja() {
         { label: "Rapor", href: "/RaporBisnis" },
     ];
 
+    const [businessId, setBusinessId] = useState(null);
+
     const [rawText, setRawText] = useState("");
     const [parsedItems, setParsedItems] = useState(null);
     const [parseError, setParseError] = useState("");
+    const [checking, setChecking] = useState(false);
     const [saving, setSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState("");
 
-    // =========================
-    // PARSE FREE TEXT
-    // =========================
+    const [uploadingPhoto, setUploadingPhoto] = useState(false);
+    const [photoError, setPhotoError] = useState("");
+    const fileInputRef = useRef(null);
 
-    function parseBelanjaText(text) {
+    useEffect(() => {
+        async function loadBusinessId() {
+            const {
+                data: { user },
+            } = await supabase.auth.getUser();
+
+            if (!user) return;
+
+            const { data: businessData } = await supabase
+                .from("businesses")
+                .select("id")
+                .eq("owner_id", user.id)
+                .single();
+
+            if (businessData) setBusinessId(businessData.id);
+        }
+
+        loadBusinessId();
+    }, []);
+
+    // =========================
+    // FALLBACK PARSER (deterministic, no AI)
+    // =========================
+    // This is the fallback path — used when the AI parser is unavailable,
+    // times out, or returns low-confidence output. It only handles the
+    // strict "Nama Barang Harga" shape; it is NOT what most users hit
+    // first, so don't delete it during future AI work.
+
+    function parseBelanjaTextFallback(text) {
         const chunks = text
             .split(",")
             .map((chunk) => chunk.trim())
@@ -70,10 +105,67 @@ function CatatBelanja() {
         };
     }
 
-    function handlePeriksa() {
-        setSaveMessage("");
+    async function logAiParse({
+        source = "expense_text",
+        rawInput = rawText,
+        rawResponse,
+        confidence,
+        items,
+        usedFallback,
+    }) {
+        if (!businessId) return;
 
-        const { items, error } = parseBelanjaText(rawText);
+        const { error } = await supabase.from("ai_parse_log").insert({
+            business_id: businessId,
+            source,
+            raw_input: rawInput,
+            raw_ai_response: rawResponse ?? null,
+            confidence: confidence ?? null,
+            parsed_items: items,
+            used_fallback: usedFallback,
+        });
+
+        if (error) {
+            console.error("GAGAL LOG AI PARSE:", error);
+        }
+    }
+
+    async function handlePeriksa() {
+        setSaveMessage("");
+        setParseError("");
+        setChecking(true);
+
+        // Try the AI parser first — it understands shorthand ("26rb", "2L
+        // minyak") the regex fallback below can't. Rule: AI only extracts/
+        // classifies here, it never computes a total or writes to the DB
+        // directly — this still lands in the same preview-then-confirm flow.
+        const { data, error: invokeError } = await supabase.functions.invoke(
+            "parse-expense-text",
+            { body: { text: rawText } }
+        );
+
+        const aiUsable =
+            !invokeError &&
+            data?.items &&
+            data.confidence >= AI_CONFIDENCE_THRESHOLD;
+
+        if (aiUsable) {
+            setChecking(false);
+            setParsedItems(data.items);
+            logAiParse({
+                rawResponse: data.rawResponse,
+                confidence: data.confidence,
+                items: data.items,
+                usedFallback: false,
+            });
+            return;
+        }
+
+        // AI unavailable, timed out, or unsure — fall back to the
+        // deterministic parser so recording never just breaks.
+        const { items, error } = parseBelanjaTextFallback(rawText);
+
+        setChecking(false);
 
         if (error) {
             setParseError(error);
@@ -81,8 +173,110 @@ function CatatBelanja() {
             return;
         }
 
-        setParseError("");
         setParsedItems(items);
+        logAiParse({
+            rawResponse: data?.rawResponse ?? { invokeError: invokeError?.message },
+            confidence: data?.confidence ?? null,
+            items,
+            usedFallback: true,
+        });
+    }
+
+    // =========================
+    // RECEIPT PHOTO (AI OCR — no deterministic fallback exists for a photo)
+    // =========================
+
+    function resizeImageToBase64(file, maxDimension = 1280) {
+        return new Promise((resolve, reject) => {
+            const objectUrl = URL.createObjectURL(file);
+            const img = new Image();
+
+            img.onload = () => {
+                const scale = Math.min(
+                    1,
+                    maxDimension / Math.max(img.width, img.height)
+                );
+
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+                URL.revokeObjectURL(objectUrl);
+
+                resolve(dataUrl.replace(/^data:image\/jpeg;base64,/, ""));
+            };
+
+            img.onerror = () => {
+                URL.revokeObjectURL(objectUrl);
+                reject(new Error("Gagal membaca file foto."));
+            };
+
+            img.src = objectUrl;
+        });
+    }
+
+    async function handlePhotoSelected(e) {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+
+        if (!file) return;
+
+        setPhotoError("");
+        setSaveMessage("");
+        setUploadingPhoto(true);
+
+        try {
+            const imageBase64 = await resizeImageToBase64(file);
+
+            const { data, error: invokeError } = await supabase.functions.invoke(
+                "parse-expense-receipt",
+                { body: { imageBase64, mediaType: "image/jpeg" } }
+            );
+
+            const usable =
+                !invokeError &&
+                data?.items &&
+                data.items.length > 0 &&
+                data.confidence >= AI_CONFIDENCE_THRESHOLD;
+
+            if (!usable) {
+                setPhotoError(
+                    "Gagal membaca struk ini. Coba ketik belanjaannya di kolom sebelah ya, Bu."
+                );
+
+                logAiParse({
+                    source: "receipt_photo",
+                    rawInput: "[foto struk]",
+                    rawResponse:
+                        data?.rawResponse ?? { invokeError: invokeError?.message },
+                    confidence: data?.confidence ?? null,
+                    items: [],
+                    usedFallback: false,
+                });
+
+                return;
+            }
+
+            setParsedItems(data.items);
+            setRawText("");
+            logAiParse({
+                source: "receipt_photo",
+                rawInput: "[foto struk]",
+                rawResponse: data.rawResponse,
+                confidence: data.confidence,
+                items: data.items,
+                usedFallback: false,
+            });
+        } catch (error) {
+            console.error("PHOTO PARSE CRASHED:", error);
+            setPhotoError("Terjadi kesalahan saat membaca foto.");
+        } finally {
+            setUploadingPhoto(false);
+        }
     }
 
     // =========================
@@ -96,44 +290,14 @@ function CatatBelanja() {
         setSaveMessage("");
 
         try {
-            const {
-                data: { user },
-                error: userError,
-            } = await supabase.auth.getUser();
-
-            if (!user) {
-                setSaveMessage("Belum login.");
-                setSaving(false);
-                return;
-            }
-
-            const {
-                data: businessData,
-                error: businessError,
-            } = await supabase
-                .from("businesses")
-                .select("*")
-                .eq("owner_id", user.id);
-
-            if (
-                businessError ||
-                !businessData ||
-                businessData.length === 0
-            ) {
-                console.error(
-                    "GAGAL MENGAMBIL BUSINESS:",
-                    businessError
-                );
-
+            if (!businessId) {
                 setSaveMessage("Gagal mengambil data bisnis.");
                 setSaving(false);
                 return;
             }
 
-            const currentBusiness = businessData[0];
-
             const rows = parsedItems.map((item) => ({
-                business_id: currentBusiness.id,
+                business_id: businessId,
                 description: item.description,
                 amount: item.amount,
                 spent_at: new Date().toISOString(),
@@ -279,14 +443,45 @@ function CatatBelanja() {
                                 Nanti AI akan bacain nominal buat ibu.
                             </p>
 
+                            <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                ref={fileInputRef}
+                                onChange={handlePhotoSelected}
+                                className="hidden"
+                            />
+
                             <div className="mt-8">
                                 <Button
                                     bgColor="white"
-                                    children="Ambil Foto"
+                                    children={
+                                        uploadingPhoto
+                                            ? "Membaca Struk..."
+                                            : "Ambil Foto"
+                                    }
                                     font="font-bold"
                                     textColor="text-red-800"
+                                    onClick={
+                                        uploadingPhoto
+                                            ? undefined
+                                            : () => fileInputRef.current?.click()
+                                    }
                                 />
                             </div>
+
+                            <AnimatePresence mode="wait">
+                                {photoError && (
+                                    <motion.p
+                                        initial={{ opacity: 0, y: -5 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -5 }}
+                                        className="mt-4 text-sm font-bold text-red-600"
+                                    >
+                                        {photoError}
+                                    </motion.p>
+                                )}
+                            </AnimatePresence>
                         </motion.div>
 
                         {/* TEXT INPUT */}
@@ -465,10 +660,16 @@ function CatatBelanja() {
                                         >
                                             <Button
                                                 bgColor="bg-red-900"
-                                                children="Periksa Dulu"
+                                                children={
+                                                    checking
+                                                        ? "Memeriksa..."
+                                                        : "Periksa Dulu"
+                                                }
                                                 font="font-bold"
                                                 onClick={
-                                                    handlePeriksa
+                                                    checking
+                                                        ? undefined
+                                                        : handlePeriksa
                                                 }
                                             />
                                         </motion.div>

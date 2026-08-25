@@ -1,7 +1,15 @@
-import { NavLink, Link } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
 import Button from "./Button";
+import { supabase } from "../lib/supabase";
 function NavBar({ items }) {
+    const navigate = useNavigate();
+
+    async function handleLogout() {
+        await supabase.auth.signOut();
+        navigate("/Login");
+    }
+
     return (
         <motion.nav
             initial={{ opacity: 0, y: -15 }}
@@ -53,14 +61,13 @@ function NavBar({ items }) {
                     </NavLink>
                 ))}
             </div>
-            <Link to="/Login">
-                <Button
-                    bgColor="bg-red-200 font-extrabold"
-                    textColor="text-red-500"
-                    border={false}
-                    children="LogOut"
-                />
-            </Link>
+            <Button
+                bgColor="bg-red-200 font-extrabold"
+                textColor="text-red-500"
+                border={false}
+                children="LogOut"
+                onClick={handleLogout}
+            />
         </motion.nav>
     );
 }

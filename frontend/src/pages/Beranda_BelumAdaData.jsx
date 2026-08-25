@@ -8,6 +8,7 @@ function BelumAdaData() {
         { label: "Beranda", href: "/Beranda" },
         { label: "Menu Laku", href: "/MenuLaku" },
         { label: "Rapor", href: "/RaporBisnis" },
+        { label: "Grafik Bisnis", href: "/GrafikBisnis" },
     ];
 
     const containerVariants = {
@@ -98,21 +99,7 @@ function BelumAdaData() {
                         />
                     </Link>
 
-                    <Link
-                        className="mt-10"
-                        to="/TutupToko"
-                    >
-                        <Button
-                            bgColor="bg-white"
-                            border={true}
-                            borderColor="border-black"
-                            children="Tutup Toko"
-                            textColor="text-black"
-                            font="font-extrabold"
-                        />
-                    </Link>
-
-                    <Link className="mt-10" to="/">
+                    <Link className="mt-10" to="/Beranda/CatatBelanja">
                         <Button
                             children="Catat Pengeluaran"
                             border={false}

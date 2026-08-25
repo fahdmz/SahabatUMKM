@@ -9,6 +9,7 @@ function RiwayatCatatanCards() {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [errorMessage, setErrorMessage] = useState("");
+    const [editingId, setEditingId] = useState(null);
 
     useEffect(() => {
         async function getTransactions() {
@@ -83,7 +84,8 @@ id,
         name
     )
         `)
-                        .eq("business_id", businessId),
+                        .eq("business_id", businessId)
+                        .is("deleted_at", null),
 
                     supabase
                         .from("expenses")
@@ -93,7 +95,8 @@ id,
     amount,
     spent_at
         `)
-                        .eq("business_id", businessId),
+                        .eq("business_id", businessId)
+                        .is("deleted_at", null),
                 ]);
 
                 if (salesError) {
@@ -204,19 +207,77 @@ id,
     }, []);
 
     // =========================
-    // EDIT HANDLER
+    // EDIT / DELETE HANDLERS
     // =========================
 
     function handleEdit(transaction) {
-        console.log("EDIT TRANSACTION:", transaction);
+        setEditingId(transaction.id);
+    }
 
-        // Untuk sekarang kita hanya log.
-        //
-        // Nanti bisa dibuat:
-        // - Modal edit
-        // - Edit sales
-        // - Edit expense
-        // - Update Supabase
+    function handleCancelEdit() {
+        setEditingId(null);
+    }
+
+    async function handleSaveEdit(transaction, { description, amount }) {
+        const table = transaction.originalType === "sale" ? "sales" : "expenses";
+
+        const updates =
+            transaction.originalType === "sale"
+                ? { total_price: amount }
+                : { description, amount };
+
+        const { error } = await supabase
+            .from(table)
+            .update(updates)
+            .eq("id", transaction.originalId);
+
+        if (error) {
+            console.error("GAGAL UPDATE TRANSAKSI:", error);
+            alert("Gagal menyimpan perubahan.");
+            return;
+        }
+
+        setTransactions((current) =>
+            current.map((item) =>
+                item.id === transaction.id
+                    ? {
+                        ...item,
+                        namaMenu:
+                            transaction.originalType === "sale"
+                                ? item.namaMenu
+                                : description,
+                        Uang: amount,
+                    }
+                    : item
+            )
+        );
+
+        setEditingId(null);
+    }
+
+    async function handleDelete(transaction) {
+        const confirmed = window.confirm(
+            `Hapus catatan "${transaction.namaMenu}"? Catatan ini tidak akan muncul lagi di riwayat.`
+        );
+
+        if (!confirmed) return;
+
+        const table = transaction.originalType === "sale" ? "sales" : "expenses";
+
+        const { error } = await supabase
+            .from(table)
+            .update({ deleted_at: new Date().toISOString() })
+            .eq("id", transaction.originalId);
+
+        if (error) {
+            console.error("GAGAL HAPUS TRANSAKSI:", error);
+            alert("Gagal menghapus catatan.");
+            return;
+        }
+
+        setTransactions((current) =>
+            current.filter((item) => item.id !== transaction.id)
+        );
     }
 
     // =========================
@@ -309,7 +370,12 @@ id,
                     tanggal={item.tanggal}
                     Uang={item.Uang}
                     type={item.type}
+                    isExpense={item.originalType === "expense"}
+                    isEditing={editingId === item.id}
                     onEdit={() => handleEdit(item)}
+                    onDelete={() => handleDelete(item)}
+                    onCancelEdit={handleCancelEdit}
+                    onSaveEdit={(values) => handleSaveEdit(item, values)}
                 />
             ))}
         </motion.div>

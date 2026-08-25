@@ -1,9 +1,11 @@
 import { motion } from "motion/react";
+import { Link } from "react-router-dom";
 import NavBar from "../components/Navbar";
 import LakuCards from "../components/LakuCards";
 import SaranMenuCards from "../components/SaranMenuCards";
 import FilterBar from "../components/FilterBar";
 import ButuhPerhatianCards from "../components/ButuhPerhatianCards";
+import Button from "../components/Button";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
@@ -125,7 +127,8 @@ function MenuLaku() {
                             name
                         )
                     `)
-                    .eq("business_id", currentBusiness.id);
+                    .eq("business_id", currentBusiness.id)
+                    .is("deleted_at", null);
 
                 if (salesError) {
                     console.error(
@@ -395,15 +398,27 @@ function MenuLaku() {
                         transition={{
                             duration: 0.5,
                         }}
-                        className="pt-10"
+                        className="pt-10 flex items-start justify-between gap-6"
                     >
-                        <h1 className="text-3xl font-extrabold tracking-tight text-black">
-                            Laris Mana?
-                        </h1>
+                        <div>
+                            <h1 className="text-3xl font-extrabold tracking-tight text-black">
+                                Laris Mana?
+                            </h1>
 
-                        <p className="mt-2 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
-                            {formattedDate}
-                        </p>
+                            <p className="mt-2 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
+                                {formattedDate}
+                            </p>
+                        </div>
+
+                        <Link to="/MenuLaku/Kelola">
+                            <Button
+                                children="Kelola Menu"
+                                bgColor="bg-white"
+                                textColor="text-gray-700"
+                                borderColor="border-gray-300"
+                                font="font-bold"
+                            />
+                        </Link>
                     </motion.section>
 
 

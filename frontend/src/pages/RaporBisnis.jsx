@@ -69,7 +69,17 @@ function RaporBisnis() {
 
                 const now = new Date();
 
-                // Previous month
+                // The month before the reported month — growth is measured
+                // against this, not against the still-in-progress current
+                // month (that was the bug: comparing a partial month to a
+                // full one always looked like a decline).
+                const monthBeforePrevStart = new Date(
+                    now.getFullYear(),
+                    now.getMonth() - 2,
+                    1
+                );
+
+                // Previous month — this is the month the report is about.
                 const previousMonthStart = new Date(
                     now.getFullYear(),
                     now.getMonth() - 1,
@@ -103,9 +113,10 @@ function RaporBisnis() {
                         )
                     `)
                     .eq("business_id", currentBusiness.id)
+                    .is("deleted_at", null)
                     .gte(
                         "sold_at",
-                        previousMonthStart.toISOString()
+                        monthBeforePrevStart.toISOString()
                     )
                     .lt(
                         "sold_at",
@@ -142,6 +153,15 @@ function RaporBisnis() {
                     );
                 });
 
+                const monthBeforePrevSales = salesData.filter((sale) => {
+                    const date = new Date(sale.sold_at);
+
+                    return (
+                        date >= monthBeforePrevStart &&
+                        date < previousMonthStart
+                    );
+                });
+
                 // =========================
                 // TOTAL REVENUE
                 // =========================
@@ -153,6 +173,12 @@ function RaporBisnis() {
                 );
 
                 const previousRevenue = previousSales.reduce(
+                    (total, sale) =>
+                        total + sale.total_price,
+                    0
+                );
+
+                const monthBeforePrevRevenue = monthBeforePrevSales.reduce(
                     (total, sale) =>
                         total + sale.total_price,
                     0
@@ -177,13 +203,17 @@ function RaporBisnis() {
                 // =========================
                 // REVENUE CHANGE
                 // =========================
+                // reportMonth (previousRevenue) vs the month before it
+                // (monthBeforePrevRevenue) — NOT vs the still-in-progress
+                // current month, which would always be a partial-vs-full
+                // comparison and misreport growth.
 
                 let revenueChange = 0;
 
-                if (previousRevenue > 0) {
+                if (monthBeforePrevRevenue > 0) {
                     revenueChange =
-                        ((currentRevenue - previousRevenue) /
-                            previousRevenue) *
+                        ((previousRevenue - monthBeforePrevRevenue) /
+                            monthBeforePrevRevenue) *
                         100;
                 }
 
@@ -257,6 +287,7 @@ function RaporBisnis() {
                     revenueChange,
 
                     activeDays: activeDays.size,
+                    transactionCount: previousSales.length,
 
                     menuPerformance,
 
@@ -341,10 +372,24 @@ function RaporBisnis() {
         previousRevenue,
         revenueChange,
         activeDays,
+        transactionCount,
         menuPerformance,
     } = reportData;
 
     const topMenu = menuPerformance[0];
+
+    // =========================
+    // ENOUGH DATA TO GRADE?
+    // =========================
+    // A handful of sales shouldn't earn a letter grade — below this, the
+    // report shows an honest "belum cukup data" instead of A/B/C.
+
+    const MIN_ACTIVE_DAYS_FOR_GRADE = 10;
+    const MIN_TRANSACTIONS_FOR_GRADE = 20;
+
+    const hasEnoughDataToGrade =
+        activeDays >= MIN_ACTIVE_DAYS_FOR_GRADE &&
+        transactionCount >= MIN_TRANSACTIONS_FOR_GRADE;
 
     // =========================
     // GRADE CALCULATION
@@ -366,10 +411,55 @@ function RaporBisnis() {
         revenueGrade = "B";
     }
 
+    // Menu concentration: how much of the month's revenue leaned on the
+    // single best-selling item. Heavy reliance on one menu is a real
+    // business risk (one bad batch/ingredient shortage tanks the month),
+    // so LOW concentration grades better than high concentration.
     let menuGrade = "C";
+    let menuConcentration = null;
 
-    if (topMenu && topMenu.total_pemasukan > 0) {
-        menuGrade = "A";
+    if (topMenu && previousRevenue > 0) {
+        menuConcentration = topMenu.total_pemasukan / previousRevenue;
+
+        if (menuConcentration <= 0.5) {
+            menuGrade = "A";
+        } else if (menuConcentration <= 0.75) {
+            menuGrade = "B";
+        }
+    }
+
+    // =========================
+    // NOT ENOUGH DATA YET
+    // =========================
+
+    if (!hasEnoughDataToGrade) {
+        return (
+            <div className="min-h-screen bg-[#f5f2eb]">
+                <NavBar items={navItems} />
+
+                <div className="flex min-h-[70vh] items-center justify-center px-6">
+                    <div className="max-w-md text-center">
+                        <h2 className="text-3xl font-extrabold text-gray-900">
+                            Belum Cukup Data
+                        </h2>
+
+                        <p className="mt-3 font-semibold text-gray-500">
+                            Rapor bulan {reportMonth} baru bisa dinilai
+                            kalau Ibu sudah catat minimal{" "}
+                            {MIN_ACTIVE_DAYS_FOR_GRADE} hari dan{" "}
+                            {MIN_TRANSACTIONS_FOR_GRADE} transaksi.
+                            Sejauh ini baru {activeDays} hari dan{" "}
+                            {transactionCount} transaksi.
+                        </p>
+
+                        <p className="mt-3 text-sm font-bold text-gray-400">
+                            Terus catat jualan tiap hari ya, Bu — rapornya
+                            bakal muncul begitu datanya cukup.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        );
     }
 
     // =========================
@@ -385,6 +475,15 @@ function RaporBisnis() {
     function formatPercentage(value) {
         return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
     }
+
+    // =========================
+    // WHATSAPP SHARE
+    // =========================
+
+    const waShareText = encodeURIComponent(
+        `Rapor ${reportMonth}: Pendapatan Rp${formatRupiah(previousRevenue)}, ${revenueChange >= 0 ? "naik" : "turun"
+        } ${formatPercentage(Math.abs(revenueChange))} dibanding bulan sebelumnya.`
+    );
 
     // =========================
     // ANIMATION
@@ -569,7 +668,14 @@ function RaporBisnis() {
                                     grade: menuGrade,
                                     description:
                                         topMenu
-                                            ? `${topMenu.name} menjadi menu dengan pemasukan terbesar bulan ini.`
+                                            ? `${topMenu.name} menyumbang ${Math.round(
+                                                menuConcentration * 100
+                                            )}% dari pendapatan bulan ini. ${menuGrade === "A"
+                                                ? "Menu warung Ibu sudah cukup beragam."
+                                                : menuGrade === "B"
+                                                    ? "Sebagian besar pendapatan masih dari satu menu."
+                                                    : "Warung Ibu terlalu bergantung pada satu menu — coba kembangkan menu lain."
+                                            }`
                                             : "Belum ada data menu yang cukup untuk dinilai.",
                                 },
                             ]}
@@ -649,13 +755,19 @@ function RaporBisnis() {
                                 </p>
 
                                 <div className="mt-10 w-full max-w-sm">
-                                    <Button
-                                        bgColor="bg-white"
-                                        borderColor="border-black"
-                                        children="Kirim ke WA Bapak →"
-                                        textColor="text-black"
-                                        font="font-extrabold"
-                                    />
+                                    <a
+                                        href={`https://wa.me/?text=${waShareText}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        <Button
+                                            bgColor="bg-white"
+                                            borderColor="border-black"
+                                            children="Kirim ke WA Bapak →"
+                                            textColor="text-black"
+                                            font="font-extrabold"
+                                        />
+                                    </a>
                                 </div>
 
                             </motion.div>

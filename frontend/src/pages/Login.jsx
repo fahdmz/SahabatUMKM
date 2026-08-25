@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import InputTextTemplate from "../components/InputTextTemplate";
 import Button from "../components/Button";
@@ -10,6 +10,10 @@ function Login() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+
+    const [showForgotPassword, setShowForgotPassword] = useState(false);
+    const [resetSent, setResetSent] = useState(false);
+    const [resetLoading, setResetLoading] = useState(false);
 
     const navigate = useNavigate();
 
@@ -31,6 +35,29 @@ function Login() {
         }
 
         navigate("/Beranda");
+    }
+
+    async function handleForgotPassword() {
+        if (!email.trim()) {
+            setError("Isi email dulu, baru klik lupa kata sandi.");
+            return;
+        }
+
+        setError("");
+        setResetLoading(true);
+
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: `${window.location.origin}/ResetPassword`,
+        });
+
+        setResetLoading(false);
+
+        if (error) {
+            setError(error.message);
+            return;
+        }
+
+        setResetSent(true);
     }
 
     return (
@@ -141,6 +168,44 @@ function Login() {
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                             />
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowForgotPassword((current) => !current);
+                                    setResetSent(false);
+                                    setError("");
+                                }}
+                                className="mt-3 text-sm font-bold text-green-700 hover:text-green-800"
+                            >
+                                Lupa kata sandi?
+                            </button>
+
+                            {showForgotPassword && (
+                                <div className="mt-3 rounded-xl bg-gray-50 p-4">
+                                    {resetSent ? (
+                                        <p className="text-sm font-bold text-green-700">
+                                            Link reset kata sandi sudah dikirim ke {email}. Cek email kamu ya, Bu.
+                                        </p>
+                                    ) : (
+                                        <>
+                                            <p className="text-sm font-semibold text-gray-500">
+                                                Kami akan kirim link reset ke email di atas.
+                                            </p>
+
+                                            <button
+                                                type="button"
+                                                onClick={handleForgotPassword}
+                                                disabled={resetLoading}
+                                                className="mt-3 rounded-lg bg-green-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-green-800"
+                                            >
+                                                {resetLoading ? "Mengirim..." : "Kirim Link Reset"}
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
                             {error && (
                                 <p className="mt-3 text-sm font-bold text-red-500">
                                     {error}
@@ -176,13 +241,15 @@ function Login() {
                                         Belum Punya Akun?
                                     </h1>
 
-                                    <Button
-                                        children="Daftar Akun Baru"
-                                        bgColor="white"
-                                        textColor="text-green-700"
-                                        borderColor="border-green-700"
-                                        font="font-bold"
-                                    />
+                                    <Link to="/Register">
+                                        <Button
+                                            children="Daftar Akun Baru"
+                                            bgColor="white"
+                                            textColor="text-green-700"
+                                            borderColor="border-green-700"
+                                            font="font-bold"
+                                        />
+                                    </Link>
                                 </motion.div>
 
                             </div>
